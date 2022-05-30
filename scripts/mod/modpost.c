@@ -164,16 +164,17 @@ static struct module *find_module(const char *modname)
 	return mod;
 }
 
-static struct module *new_module(const char *modname)
+static struct module *new_module(const char *name, size_t namelen)
 {
 	struct module *mod;
 
-	mod = NOFAIL(malloc(sizeof(*mod) + strlen(modname) + 1));
+	mod = NOFAIL(malloc(sizeof(*mod) + namelen + 1));
 	memset(mod, 0, sizeof(*mod));
 
 	/* add to list */
-	strcpy(mod->name, modname);
-	mod->is_vmlinux = (strcmp(modname, "vmlinux") == 0);
+	memcpy(mod->name, name, namelen);
+	mod->name[namelen] = '\0';
+	mod->is_vmlinux = (strcmp(mod->name, "vmlinux") == 0);
 	mod->gpl_compatible = -1;
 	mod->next = modules;
 	modules = mod;
@@ -2024,18 +2025,13 @@ static void read_symbols(const char *modname)
 	if (!parse_elf(&info, modname))
 		return;
 
-	{
-		char *tmp;
-
-		/* strip trailing .o */
-		tmp = NOFAIL(strdup(modname));
-		tmp[strlen(tmp) - 2] = '\0';
-		/* strip trailing .lto */
-		if (strends(tmp, ".lto"))
-			tmp[strlen(tmp) - 4] = '\0';
-		mod = new_module(tmp);
-		free(tmp);
+	if (!strends(modname, ".o")) {
+		error("%s: filename must be suffixed with .o\n", modname);
+		return;
 	}
+
+	/* strip trailing .o */
+	mod = new_module(modname, strlen(modname) - strlen(".o"));
 
 	if (!mod->is_vmlinux) {
 		license = get_modinfo(&info, "license");
@@ -2490,7 +2486,7 @@ static void read_dump(const char *fname)
 			goto fail;
 		mod = find_module(modname);
 		if (!mod) {
-			mod = new_module(modname);
+			mod = new_module(modname, strlen(modname));
 			mod->from_dump = 1;
 		}
 		s = sym_add_exported(symname, mod, export_no(export));
